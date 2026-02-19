@@ -1,0 +1,208 @@
+import { useState, useEffect } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
+import { SmStudent, SmCareerGoals, SmCareerChangeHistory, ADMISSION_TYPES } from '../../types/database'
+
+export default function AdminStudentDetail() {
+  const { studentId } = useParams<{ studentId: string }>()
+  const [student, setStudent] = useState<SmStudent | null>(null)
+  const [careerGoals, setCareerGoals] = useState<SmCareerGoals | null>(null)
+  const [careerHistory, setCareerHistory] = useState<SmCareerChangeHistory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!studentId) return
+    const fetchData = async () => {
+      setLoading(true)
+      setError(null)
+
+      const studentRes = await supabase
+        .from('sm_students')
+        .select('*')
+        .eq('id', studentId)
+        .maybeSingle()
+
+      if (studentRes.error) {
+        setError(studentRes.error.message)
+        setLoading(false)
+        return
+      }
+      if (!studentRes.data) {
+        setError('학생 정보를 찾을 수 없습니다.')
+        setLoading(false)
+        return
+      }
+
+      setStudent(studentRes.data)
+
+      const [goalsRes, historyRes] = await Promise.all([
+        supabase.from('sm_career_goals').select('*').eq('student_id', studentId).maybeSingle(),
+        supabase.from('sm_career_change_history').select('*').eq('student_id', studentId).order('change_date', { ascending: false }),
+      ])
+      if (goalsRes.data) setCareerGoals(goalsRes.data)
+      if (historyRes.data) setCareerHistory(historyRes.data)
+      setLoading(false)
+    }
+    fetchData()
+  }, [studentId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    )
+  }
+
+  if (error || !student) {
+    return (
+      <div className="text-center py-20">
+        <Link to="/admin" className="text-sm text-blue-600 hover:text-blue-800 mb-4 inline-block">
+          &larr; 학생 목록으로
+        </Link>
+        <p className="text-red-500 mb-2">{error || '학생 정보를 찾을 수 없습니다.'}</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <Link to="/admin" className="text-sm text-blue-600 hover:text-blue-800 mb-4 inline-block">
+        &larr; 학생 목록으로
+      </Link>
+
+      <div className="flex items-center gap-3 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">
+          {student.name || student.student_login_id}
+        </h2>
+        <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+          student.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {student.is_active ? '활성' : '비활성'}
+        </span>
+      </div>
+
+      {/* 기본 정보 */}
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">기본 신상 정보</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <InfoRow label="이름" value={student.name} />
+          <InfoRow label="학년" value={student.grade ? `${student.grade}학년` : ''} />
+          <InfoRow label="아이디" value={student.student_login_id} />
+          <InfoRow label="입학 연도" value={student.enrollment_year?.toString()} />
+          <InfoRow label="졸업 예정 연도" value={student.graduation_year?.toString()} />
+          <InfoRow label="고등학교" value={student.high_school_name} />
+          <InfoRow label="학생 연락처" value={student.student_phone} />
+          <InfoRow label="학부모 연락처" value={student.parent_phone} />
+          <InfoRow label="담당 컨설턴트" value={student.consultant_name} />
+        </div>
+      </section>
+
+      {/* 진로 및 목표 */}
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">진로 및 목표 정보</h3>
+        {careerGoals ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <InfoRow label="희망 진로 1순위" value={`${careerGoals.career_field_1st} ${careerGoals.career_detail_1st}`.trim()} />
+              <InfoRow label="희망 진로 2순위" value={`${careerGoals.career_field_2nd} ${careerGoals.career_detail_2nd}`.trim()} />
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-500 mb-2">목표 대학</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <UnivCard rank="1지망" name={careerGoals.target_univ_1_name} dept={careerGoals.target_univ_1_dept} />
+                <UnivCard rank="2지망" name={careerGoals.target_univ_2_name} dept={careerGoals.target_univ_2_dept} />
+                <UnivCard rank="3지망" name={careerGoals.target_univ_3_name} dept={careerGoals.target_univ_3_dept} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <InfoRow label="목표 대학 Tier" value={careerGoals.target_tier} />
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">전형 유형 비율</p>
+                <div className="flex gap-2 flex-wrap">
+                  {Object.entries(ADMISSION_TYPES).map(([key, label]) => {
+                    const ratio = careerGoals[`admission_${key}_ratio` as keyof SmCareerGoals] as number
+                    return ratio > 0 ? (
+                      <span key={key} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md">
+                        {label} {ratio}%
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-500 mb-1">희망 계열 키워드</p>
+              <div className="flex gap-2">
+                {(Array.isArray(careerGoals.field_keywords) ? careerGoals.field_keywords : []).map((kw: string, i: number) => (
+                  <span key={i} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm">
+                    {kw}
+                  </span>
+                ))}
+                {(!Array.isArray(careerGoals.field_keywords) || careerGoals.field_keywords.length === 0) && (
+                  <span className="text-gray-400 text-sm">미입력</span>
+                )}
+              </div>
+            </div>
+
+            <InfoRow label="특이사항" value={careerGoals.special_notes} />
+          </div>
+        ) : (
+          <p className="text-gray-400">아직 입력된 진로 목표 정보가 없습니다.</p>
+        )}
+      </section>
+
+      {/* 진로 변경 이력 */}
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">진로 변경 이력</h3>
+        {careerHistory.length > 0 ? (
+          <div className="space-y-3">
+            {careerHistory.map(item => (
+              <div key={item.id} className="border-l-4 border-blue-400 pl-4 py-2">
+                <p className="text-xs text-gray-400 mb-1">{item.change_date}</p>
+                <p className="text-sm">
+                  <span className="text-gray-500">{item.previous_career}</span>
+                  <span className="mx-2 text-gray-400">&rarr;</span>
+                  <span className="font-medium text-gray-800">{item.new_career}</span>
+                </p>
+                {item.reason && <p className="text-xs text-gray-500 mt-1">사유: {item.reason}</p>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400">진로 변경 이력이 없습니다.</p>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-gray-500 mb-0.5">{label}</p>
+      <p className="text-sm text-gray-800">{value || <span className="text-gray-400">미입력</span>}</p>
+    </div>
+  )
+}
+
+function UnivCard({ rank, name, dept }: { rank: string; name: string; dept: string }) {
+  const hasData = name || dept
+  return (
+    <div className="bg-gray-50 rounded-lg p-3">
+      <p className="text-xs text-gray-400 mb-1">{rank}</p>
+      {hasData ? (
+        <>
+          <p className="text-sm font-medium text-gray-800">{name}</p>
+          <p className="text-xs text-gray-500">{dept}</p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">미입력</p>
+      )}
+    </div>
+  )
+}
