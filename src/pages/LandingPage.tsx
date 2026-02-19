@@ -9,16 +9,10 @@ export default function LandingPage() {
 
         <div className="flex flex-col gap-4">
           <Link
-            to="/admin/login"
-            className="block w-full py-4 px-6 bg-blue-600 text-white rounded-xl text-lg font-semibold hover:bg-blue-700 transition shadow-md"
-          >
-            관리자 로그인
-          </Link>
-          <Link
             to="/student/login"
             className="block w-full py-4 px-6 bg-green-600 text-white rounded-xl text-lg font-semibold hover:bg-green-700 transition shadow-md"
           >
-            학생 로그인
+            로그인
           </Link>
         </div>
       </div>
