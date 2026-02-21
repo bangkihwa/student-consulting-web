@@ -10,21 +10,12 @@ export async function generateStudentLoginId(
   const gradeCode = grade.padStart(2, '0')
   const idPrefix = `${prefix}${gradeCode}`
 
-  const { data } = await supabase
-    .from('sm_students')
-    .select('student_login_id')
-    .like('student_login_id', `${idPrefix}%`)
-    .order('student_login_id', { ascending: false })
-    .limit(1)
+  const { data, error } = await supabase.rpc('sm_generate_student_login_id', {
+    p_prefix: idPrefix,
+  })
 
-  let seq = 1
-  if (data && data.length > 0) {
-    const lastId = data[0].student_login_id
-    const lastSeq = parseInt(lastId.slice(3), 10)
-    if (!isNaN(lastSeq)) seq = lastSeq + 1
-  }
-
-  return `${idPrefix}${String(seq).padStart(3, '0')}`
+  if (error) throw new Error(error.message)
+  return data as string
 }
 
 export function formatPhone(value: string): string {
