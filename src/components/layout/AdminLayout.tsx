@@ -5,41 +5,38 @@ export default function AdminLayout() {
   const { user, signOut } = useAuth()
   const location = useLocation()
 
-  const isActive = (path: string) => location.pathname === path
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <Link to="/admin" className="text-xl font-bold text-blue-700">
-              입시 컨설팅 관리
+    <div className="min-h-screen bg-gradient-page">
+      <header className="bg-gradient-to-r from-rose-900 via-rose-800 to-rose-900 border-b border-rose-700/50 shadow-nav sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <Link to="/admin" className="flex items-center gap-2 text-lg font-bold text-white">
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-xs font-black text-rose-900">SD</span>
+              학생 세부자료 관리
             </Link>
             <nav className="flex gap-4">
               <Link
                 to="/admin"
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  isActive('/admin')
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                className={`text-sm font-medium transition-colors ${
+                  location.pathname === '/admin' ? 'text-amber-400' : 'text-rose-200/70 hover:text-white'
                 }`}
               >
-                학생 관리
+                학생 목록
               </Link>
             </nav>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-500">{user?.email}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-rose-300">{user?.email}</span>
             <button
               onClick={signOut}
-              className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 border border-gray-300 rounded-md"
+              className="text-sm text-rose-300/70 hover:text-white transition-colors"
             >
               로그아웃
             </button>
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8">
         <Outlet />
       </main>
     </div>
