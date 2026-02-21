@@ -67,3 +67,67 @@ export const ADMISSION_TYPES = {
   nonsul: '논술',
   jeongsi: '정시',
 } as const
+
+// ============================================================
+// 파일 업로드 + AI 분석
+// ============================================================
+
+export interface SmUploadedFile {
+  id: string
+  student_id: string
+  uploaded_by: string
+  file_name: string
+  file_type: 'pdf' | 'docx'
+  file_size_bytes: number
+  storage_path: string
+  semester: string
+  category_main: '창체활동' | '교과세특'
+  changche_type: '자율활동' | '동아리활동' | '진로활동' | '봉사활동' | null
+  changche_sub: string
+  gyogwa_type: '교과활동(수행)' | '추가활동' | null
+  gyogwa_sub: string
+  gyogwa_subject_name: string
+  bongsa_hours: number | null
+  analysis_status: '대기중' | '분석중' | '완료' | '실패'
+  analysis_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SmFileAnalysis {
+  id: string
+  file_id: string
+  student_id: string
+  title: string
+  activity_content: string
+  conclusion: string
+  research_plan: string
+  reading_activities: string
+  evaluation_competency: string
+  raw_text: string
+  is_edited: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type CategoryMain = '창체활동' | '교과세특'
+export type ChangcheType = '자율활동' | '동아리활동' | '진로활동' | '봉사활동'
+export type GyogwaType = '교과활동(수행)' | '추가활동'
+
+export const CHANGCHE_TYPES: ChangcheType[] = ['자율활동', '동아리활동', '진로활동', '봉사활동']
+
+export const CHANGCHE_SUBS: Record<ChangcheType, string[]> = {
+  '자율활동': ['학급활동', '공동체활동', '진로연계활동', '기타'],
+  '동아리활동': ['팀프로젝트', '개인활동', '독서활동', '기타'],
+  '진로활동': ['학급활동', '공동체활동', '진로심화활동', '기타'],
+  '봉사활동': [],
+}
+
+export const GYOGWA_TYPES: GyogwaType[] = ['교과활동(수행)', '추가활동']
+
+export const GYOGWA_SUBS: Record<GyogwaType, string[]> = {
+  '교과활동(수행)': ['발표', '토론', '실험', '보고서', '독서', '기타'],
+  '추가활동': ['실험', '보고서', '독서', '기타'],
+}
+
+export const SEMESTERS = ['1-1', '1-2', '2-1', '2-2', '3-1', '3-2'] as const

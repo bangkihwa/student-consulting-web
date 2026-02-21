@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { SmStudent, SmCareerGoals, SmCareerChangeHistory, ADMISSION_TYPES } from '../../types/database'
+import { useFileUpload } from '../../hooks/useFileUpload'
+import FileUploadSection from '../../components/admin/FileUploadSection'
+import FileList from '../../components/admin/FileList'
+import FileAnalysisCard from '../../components/admin/FileAnalysisCard'
 
 export default function AdminStudentDetail() {
   const { studentId } = useParams<{ studentId: string }>()
@@ -10,6 +14,37 @@ export default function AdminStudentDetail() {
   const [careerHistory, setCareerHistory] = useState<SmCareerChangeHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // 파일 업로드 관련
+  const { files, uploadFile, deleteFile, getAnalysis, updateAnalysis } = useFileUpload(studentId)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+
+  const handleUpload = async (file: File, metadata: Parameters<typeof uploadFile>[1]) => {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const result = await uploadFile(file, metadata)
+      setSelectedFileId(result.file.id)
+    } catch (err: any) {
+      setUploadError(err.message || '업로드 실패')
+      throw err
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDeleteFile = async (fileId: string) => {
+    try {
+      await deleteFile(fileId)
+      if (selectedFileId === fileId) setSelectedFileId(null)
+    } catch (err: any) {
+      alert(`삭제 실패: ${err.message}`)
+    }
+  }
+
+  const stableGetAnalysis = useCallback(getAnalysis, [getAnalysis])
 
   useEffect(() => {
     if (!studentId) return
@@ -157,7 +192,7 @@ export default function AdminStudentDetail() {
       </section>
 
       {/* 진로 변경 이력 */}
-      <section className="bg-white rounded-xl shadow-sm p-6">
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">진로 변경 이력</h3>
         {careerHistory.length > 0 ? (
           <div className="space-y-3">
@@ -175,6 +210,29 @@ export default function AdminStudentDetail() {
           </div>
         ) : (
           <p className="text-gray-400">진로 변경 이력이 없습니다.</p>
+        )}
+      </section>
+
+      {/* 활동 보고서 업로드 & AI 분석 */}
+      <section className="space-y-4">
+        <FileUploadSection onUpload={handleUpload} uploading={uploading} />
+        {uploadError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+            {uploadError}
+          </div>
+        )}
+        <FileList
+          files={files}
+          selectedFileId={selectedFileId}
+          onSelect={setSelectedFileId}
+          onDelete={handleDeleteFile}
+        />
+        {selectedFileId && files.find(f => f.id === selectedFileId)?.analysis_status === '완료' && (
+          <FileAnalysisCard
+            fileId={selectedFileId}
+            getAnalysis={stableGetAnalysis}
+            onUpdate={updateAnalysis}
+          />
         )}
       </section>
     </div>
