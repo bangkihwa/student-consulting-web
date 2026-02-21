@@ -77,7 +77,7 @@ export interface SmUploadedFile {
   student_id: string
   uploaded_by: string
   file_name: string
-  file_type: 'pdf' | 'docx'
+  file_type: 'pdf' | 'docx' | 'jpg' | 'jpeg' | 'png' | 'webp' | 'gif'
   file_size_bytes: number
   storage_path: string
   semester: string

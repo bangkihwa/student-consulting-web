@@ -12,8 +12,8 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
 
   const validateFile = (file: File): boolean => {
     const ext = file.name.split('.').pop()?.toLowerCase()
-    if (!ext || !['pdf', 'docx'].includes(ext)) {
-      alert(`${file.name}: PDF 또는 DOCX 파일만 업로드 가능합니다.\n한글(HWP) 파일은 PDF로 변환 후 업로드해주세요.`)
+    if (!ext || !['pdf', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) {
+      alert(`${file.name}: PDF, DOCX, 이미지(JPG/PNG) 파일만 업로드 가능합니다.`)
       return false
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -93,15 +93,15 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
             ) : (
               <div>
                 <p className="text-sm text-gray-500">파일을 드래그하거나 클릭하여 선택 (복수 선택 가능)</p>
-                <p className="text-xs text-gray-400 mt-1">PDF, DOCX (최대 10MB)</p>
-                <p className="text-xs text-gray-400">HWP 파일은 PDF로 변환 후 업로드해주세요</p>
+                <p className="text-xs text-gray-400 mt-1">PDF, DOCX, 이미지(JPG/PNG) (최대 10MB)</p>
+                <p className="text-xs text-gray-400">캡쳐 이미지도 AI가 텍스트를 읽어 분석합니다</p>
               </div>
             )}
           </div>
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx"
+            accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,.gif"
             multiple
             className="hidden"
             onChange={e => {

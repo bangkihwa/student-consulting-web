@@ -71,12 +71,16 @@ Deno.serve(async (req) => {
 
     const fileName = file.name
     const ext = fileName.split('.').pop()?.toLowerCase()
-    if (!ext || !['pdf', 'docx'].includes(ext)) {
-      return jsonError('PDF 또는 DOCX 파일만 지원합니다.', 400)
+    const ALLOWED_DOC = ['pdf', 'docx']
+    const ALLOWED_IMG = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+    if (!ext || ![...ALLOWED_DOC, ...ALLOWED_IMG].includes(ext)) {
+      return jsonError('PDF, DOCX, JPG, PNG 파일을 지원합니다.', 400)
     }
     if (file.size > 10 * 1024 * 1024) {
       return jsonError('파일 크기는 10MB 이하여야 합니다.', 400)
     }
+
+    const isImage = ALLOWED_IMG.includes(ext)
 
     // 3. Storage 업로드 (물리 파일은 1번만)
     const uploadId = crypto.randomUUID()
@@ -94,28 +98,42 @@ Deno.serve(async (req) => {
       return jsonError(`파일 업로드 실패: ${uploadError.message}`, 500)
     }
 
-    // 4. 텍스트 추출
+    // 4. 텍스트 추출 또는 이미지 처리
     let rawText = ''
-    try {
-      if (ext === 'pdf') {
-        rawText = await extractPdfText(new Uint8Array(fileBuffer))
-      } else if (ext === 'docx') {
-        rawText = await extractDocxText(new Uint8Array(fileBuffer))
-      }
-    } catch (parseError) {
-      return jsonError(`텍스트 추출 실패: ${parseError}`, 500)
-    }
-
-    if (!rawText.trim()) {
-      return jsonError('파일에서 텍스트를 추출할 수 없습니다.', 400)
-    }
-
-    // 5. AI 분석 - 모든 항목 개별 추출
     let entries: any[] = []
-    try {
-      entries = await extractAllEntries(openaiKey, rawText, fileName, student.grade, student.enrollment_year)
-    } catch (aiError) {
-      return jsonError(`AI 분석 실패: ${aiError}`, 500)
+
+    if (isImage) {
+      // 이미지: GPT Vision API로 직접 분석
+      try {
+        const base64 = bufferToBase64(new Uint8Array(fileBuffer))
+        const mimeType = file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`
+        entries = await extractEntriesFromImage(openaiKey, base64, mimeType, fileName, student.grade, student.enrollment_year)
+        rawText = `[이미지 파일: ${fileName}]`
+      } catch (aiError) {
+        return jsonError(`이미지 AI 분석 실패: ${aiError}`, 500)
+      }
+    } else {
+      // 문서: 텍스트 추출 후 분석
+      try {
+        if (ext === 'pdf') {
+          rawText = await extractPdfText(new Uint8Array(fileBuffer))
+        } else if (ext === 'docx') {
+          rawText = await extractDocxText(new Uint8Array(fileBuffer))
+        }
+      } catch (parseError) {
+        return jsonError(`텍스트 추출 실패: ${parseError}`, 500)
+      }
+
+      if (!rawText.trim()) {
+        return jsonError('파일에서 텍스트를 추출할 수 없습니다.', 400)
+      }
+
+      // 5. AI 분석 - 모든 항목 개별 추출
+      try {
+        entries = await extractAllEntries(openaiKey, rawText, fileName, student.grade, student.enrollment_year)
+      } catch (aiError) {
+        return jsonError(`AI 분석 실패: ${aiError}`, 500)
+      }
     }
 
     if (entries.length === 0) {
@@ -286,6 +304,93 @@ async function handleReanalyze(
 }
 
 // ============================================================
+// 이미지 → base64 변환
+// ============================================================
+
+function bufferToBase64(buffer: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < buffer.length; i++) {
+    binary += String.fromCharCode(buffer[i])
+  }
+  return btoa(binary)
+}
+
+// ============================================================
+// 이미지 파일 AI 분석 (GPT Vision)
+// ============================================================
+
+async function extractEntriesFromImage(
+  apiKey: string,
+  base64: string,
+  mimeType: string,
+  fileName: string,
+  studentGrade: string | null,
+  enrollmentYear: number | null,
+): Promise<any[]> {
+  const systemPrompt = buildSystemPrompt(studentGrade, enrollmentYear)
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.1,
+      max_tokens: 16384,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `파일: ${fileName}\n\n이 이미지에서 모든 활동 항목을 추출해주세요.` },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
+                detail: 'high',
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`OpenAI API 오류 (${response.status}): ${errorBody}`)
+  }
+
+  const data = await response.json()
+  const content = data.choices?.[0]?.message?.content
+  if (!content) throw new Error('OpenAI 응답이 비어있습니다.')
+
+  const finishReason = data.choices?.[0]?.finish_reason
+  console.log(`[AI-Vision] finish_reason: ${finishReason}, content length: ${content.length}`)
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    console.log('[AI-Vision] JSON 파싱 실패, 복구 시도...')
+    const recovered = recoverTruncatedJson(content)
+    parsed = JSON.parse(recovered)
+  }
+
+  if (Array.isArray(parsed.e)) return parsed.e.map(expandEntry)
+  if (Array.isArray(parsed.entries)) {
+    return parsed.entries.map((entry: any) => {
+      if (entry.semester || entry.category_main) return entry
+      return expandEntry(entry)
+    })
+  }
+  return [expandEntry(parsed)]
+}
+
+// ============================================================
 // 텍스트 추출
 // ============================================================
 
@@ -359,16 +464,9 @@ function expandEntry(compact: Record<string, any>): Record<string, any> {
   return result
 }
 
-async function extractAllEntries(
-  apiKey: string,
-  text: string,
-  fileName: string,
-  studentGrade: string | null,
-  enrollmentYear: number | null,
-): Promise<any[]> {
-  const inputText = text.substring(0, 60000)
-
-  const systemPrompt = `한국 고등학생 생활기록부(생기부) 문서에서 모든 활동 기록을 개별 항목으로 추출하세요.
+// 시스템 프롬프트 생성 (텍스트 분석 & 이미지 분석 공용)
+function buildSystemPrompt(studentGrade: string | null, enrollmentYear: number | null): string {
+  return `한국 고등학생 생활기록부(생기부) 문서에서 모든 활동 기록을 개별 항목으로 추출하세요.
 학생 현재 ${studentGrade ? `${studentGrade}학년` : '학년 미상'}, 입학연도: ${enrollmentYear || '미상'}
 
 ## 핵심 규칙
@@ -401,6 +499,17 @@ async function extractAllEntries(
 {"e":[{"s":"1-1","c":"창","ct":"자","cs":"특강","t":"유클리드 기하학","ac":"그뢰브너 기저 소감문 작성","ec":"탐구역량"},{"s":"1-1","c":"교","gn":"국어","gt":"수","gs":"토론","t":"의대 정원 토론","ac":"의과대학 정원 확대 찬성 입장 발표","ra":"언어의 높이뛰기/신지영","ec":"비판적사고"}]}
 
 모든 학년(1학년,2학년,3학년)의 모든 항목을 빠짐없이 추출하세요.`
+}
+
+async function extractAllEntries(
+  apiKey: string,
+  text: string,
+  fileName: string,
+  studentGrade: string | null,
+  enrollmentYear: number | null,
+): Promise<any[]> {
+  const inputText = text.substring(0, 60000)
+  const systemPrompt = buildSystemPrompt(studentGrade, enrollmentYear)
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
