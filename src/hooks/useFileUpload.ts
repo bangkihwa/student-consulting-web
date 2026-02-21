@@ -54,23 +54,45 @@ export function useFileUpload(studentId: string | undefined) {
     }
 
     await fetchFiles()
-    return result as { file: SmUploadedFile; analysis: SmFileAnalysis }
+    return result as { count: number; files: SmUploadedFile[]; analyses: SmFileAnalysis[] }
   }
 
   const deleteFile = async (fileId: string) => {
-    // 스토리지에서 파일 삭제
     const fileToDelete = files.find(f => f.id === fileId)
     if (fileToDelete) {
-      await supabase.storage.from('sm-activity-files').remove([fileToDelete.storage_path])
+      // 같은 storage_path를 공유하는 다른 레코드가 있는지 확인
+      const { count } = await supabase
+        .from('sm_uploaded_files')
+        .select('id', { count: 'exact', head: true })
+        .eq('storage_path', fileToDelete.storage_path)
+
+      // 마지막 레코드일 때만 스토리지에서 삭제
+      if (count != null && count <= 1) {
+        await supabase.storage.from('sm-activity-files').remove([fileToDelete.storage_path])
+      }
     }
 
-    // DB에서 삭제 (CASCADE로 분석 결과도 삭제)
     const { error: err } = await supabase
       .from('sm_uploaded_files')
       .delete()
       .eq('id', fileId)
 
     if (err) throw new Error(err.message)
+    await fetchFiles()
+  }
+
+  // 같은 파일(storage_path)에서 추출된 모든 항목 일괄 삭제
+  const deleteBatch = async (storagePath: string) => {
+    // 해당 storage_path의 모든 파일 레코드 삭제 (CASCADE로 분석도 삭제)
+    const { error: err } = await supabase
+      .from('sm_uploaded_files')
+      .delete()
+      .eq('storage_path', storagePath)
+
+    if (err) throw new Error(err.message)
+
+    // 스토리지에서 물리 파일 삭제
+    await supabase.storage.from('sm-activity-files').remove([storagePath])
     await fetchFiles()
   }
 
@@ -120,7 +142,6 @@ export function useFileUpload(studentId: string | undefined) {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) throw new Error('로그인이 필요합니다.')
 
-    // 상태를 분석중으로 변경
     await supabase
       .from('sm_uploaded_files')
       .update({ analysis_status: '분석중', analysis_error: null })
@@ -153,6 +174,7 @@ export function useFileUpload(studentId: string | undefined) {
     error,
     uploadFile,
     deleteFile,
+    deleteBatch,
     getAnalysis,
     getAllAnalyses,
     updateAnalysis,

@@ -5,6 +5,7 @@ interface Props {
   selectedFileId: string | null
   onSelect: (fileId: string) => void
   onDelete: (fileId: string) => void
+  onDeleteBatch: (storagePath: string) => void
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -14,7 +15,31 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
   '실패': { bg: 'bg-red-100', text: 'text-red-700', label: '실패' },
 }
 
-export default function FileList({ files, selectedFileId, onSelect, onDelete }: Props) {
+interface BatchGroup {
+  storagePath: string
+  fileName: string
+  files: SmUploadedFile[]
+}
+
+function groupByBatch(files: SmUploadedFile[]): BatchGroup[] {
+  const map = new Map<string, SmUploadedFile[]>()
+  for (const f of files) {
+    const list = map.get(f.storage_path) || []
+    list.push(f)
+    map.set(f.storage_path, list)
+  }
+  const groups: BatchGroup[] = []
+  for (const [storagePath, batchFiles] of map) {
+    groups.push({
+      storagePath,
+      fileName: batchFiles[0].file_name,
+      files: batchFiles,
+    })
+  }
+  return groups
+}
+
+export default function FileList({ files, selectedFileId, onSelect, onDelete, onDeleteBatch }: Props) {
   if (files.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm p-6">
@@ -24,10 +49,7 @@ export default function FileList({ files, selectedFileId, onSelect, onDelete }: 
     )
   }
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
-  }
+  const groups = groupByBatch(files)
 
   const getSemesterLabel = (semester: string) => {
     if (!semester) return ''
@@ -53,84 +75,115 @@ export default function FileList({ files, selectedFileId, onSelect, onDelete }: 
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-800">
-          업로드된 파일 <span className="text-sm font-normal text-gray-500">({files.length}개)</span>
+          추출된 항목 <span className="text-sm font-normal text-gray-500">({files.length}개)</span>
         </h3>
       </div>
 
-      <div className="space-y-2">
-        {files.map(file => {
-          const status = STATUS_STYLES[file.analysis_status] || STATUS_STYLES['대기중']
-          const isSelected = file.id === selectedFileId
-          const isComplete = file.analysis_status === '완료'
-
-          return (
-            <div
-              key={file.id}
-              className={`border rounded-lg p-3 cursor-pointer transition ${
-                isSelected
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-              onClick={() => onSelect(file.id)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-xs font-medium text-gray-500 uppercase">
-                      {file.file_type}
-                    </span>
-                    <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${status.bg} ${status.text}`}>
-                      {status.label}
-                    </span>
-                    {isComplete && file.semester && (
-                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-purple-50 text-purple-700 font-medium">
-                        {getSemesterLabel(file.semester)}
-                      </span>
-                    )}
-                    {isComplete && (
-                      <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${
-                        file.category_main === '창체활동'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-blue-50 text-blue-700'
-                      }`}>
-                        {getCategoryLabel(file)}
-                      </span>
-                    )}
-                    {isComplete && getActivityLabel(file) && (
-                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-                        {getActivityLabel(file)}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm font-medium text-gray-800 truncate">{file.file_name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {formatDate(file.created_at)}
-                    {isComplete && (
-                      <span className="ml-2 text-blue-500">AI 자동분류</span>
-                    )}
-                  </p>
-                  {file.analysis_status === '실패' && file.analysis_error && (
-                    <p className="text-xs text-red-500 mt-1">{file.analysis_error}</p>
-                  )}
+      <div className="space-y-4">
+        {groups.map(group => (
+          <div key={group.storagePath}>
+            {/* 배치 헤더 (2개 이상 항목인 경우만) */}
+            {group.files.length > 1 && (
+              <div className="flex items-center justify-between mb-2 px-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 uppercase">{group.files[0].file_type}</span>
+                  <span className="text-sm font-medium text-gray-700">{group.fileName}</span>
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">
+                    {group.files.length}개 항목 추출
+                  </span>
                 </div>
                 <button
-                  onClick={e => {
-                    e.stopPropagation()
-                    if (confirm(`"${file.file_name}" 파일을 삭제하시겠습니까?`)) {
-                      onDelete(file.id)
+                  onClick={() => {
+                    if (confirm(`"${group.fileName}"에서 추출된 ${group.files.length}개 항목을 모두 삭제하시겠습니까?`)) {
+                      onDeleteBatch(group.storagePath)
                     }
                   }}
-                  className="ml-2 p-1 text-gray-400 hover:text-red-500 transition"
-                  title="삭제"
+                  className="text-xs text-red-500 hover:text-red-700 transition"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  전체 삭제
                 </button>
               </div>
+            )}
+
+            {/* 개별 항목들 */}
+            <div className="space-y-1.5">
+              {group.files.map(file => {
+                const status = STATUS_STYLES[file.analysis_status] || STATUS_STYLES['대기중']
+                const isSelected = file.id === selectedFileId
+                const isComplete = file.analysis_status === '완료'
+                const isSingle = group.files.length === 1
+
+                return (
+                  <div
+                    key={file.id}
+                    className={`border rounded-lg p-3 cursor-pointer transition ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    } ${!isSingle ? 'ml-3 border-l-4' : ''}`}
+                    style={!isSingle ? { borderLeftColor: file.category_main === '창체활동' ? '#10b981' : '#3b82f6' } : undefined}
+                    onClick={() => onSelect(file.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                          {!isComplete && (
+                            <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${status.bg} ${status.text}`}>
+                              {status.label}
+                            </span>
+                          )}
+                          {isComplete && file.semester && (
+                            <span className="px-1.5 py-0.5 text-xs rounded-full bg-purple-50 text-purple-700 font-medium">
+                              {getSemesterLabel(file.semester)}
+                            </span>
+                          )}
+                          {isComplete && (
+                            <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${
+                              file.category_main === '창체활동'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'bg-blue-50 text-blue-700'
+                            }`}>
+                              {getCategoryLabel(file)}
+                            </span>
+                          )}
+                          {isComplete && getActivityLabel(file) && (
+                            <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+                              {getActivityLabel(file)}
+                            </span>
+                          )}
+                        </div>
+                        {/* 단일 파일이면 파일명, 배치면 분석 제목 표시 */}
+                        {isSingle ? (
+                          <p className="text-sm font-medium text-gray-800 truncate">{file.file_name}</p>
+                        ) : null}
+                        {file.analysis_status === '실패' && file.analysis_error && (
+                          <p className="text-xs text-red-500 mt-1">{file.analysis_error}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation()
+                          if (confirm(isSingle
+                            ? `"${file.file_name}" 파일을 삭제하시겠습니까?`
+                            : `이 항목을 삭제하시겠습니까?`
+                          )) {
+                            onDelete(file.id)
+                          }
+                        }}
+                        className="ml-2 p-1 text-gray-400 hover:text-red-500 transition"
+                        title="삭제"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
     </div>
   )

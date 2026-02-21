@@ -61,7 +61,7 @@ export default function AdminStudentDetail() {
   const [error, setError] = useState<string | null>(null)
 
   // 파일 업로드 관련
-  const { files, uploadFile, deleteFile, getAnalysis, getAllAnalyses, updateAnalysis, updateFileMetadata, reanalyzeFile } = useFileUpload(studentId)
+  const { files, uploadFile, deleteFile, deleteBatch, getAnalysis, getAllAnalyses, updateAnalysis, updateFileMetadata, reanalyzeFile } = useFileUpload(studentId)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
@@ -72,12 +72,24 @@ export default function AdminStudentDetail() {
     setUploadError(null)
     try {
       const result = await uploadFile(file)
-      setSelectedFileId(result.file.id)
+      // 첫 번째 항목을 선택
+      if (result.files && result.files.length > 0) {
+        setSelectedFileId(result.files[0].id)
+      }
     } catch (err: any) {
       setUploadError(err.message || '업로드 실패')
       throw err
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleDeleteBatch = async (storagePath: string) => {
+    try {
+      await deleteBatch(storagePath)
+      setSelectedFileId(null)
+    } catch (err: any) {
+      alert(`일괄 삭제 실패: ${err.message}`)
     }
   }
 
@@ -559,6 +571,7 @@ export default function AdminStudentDetail() {
             selectedFileId={selectedFileId}
             onSelect={setSelectedFileId}
             onDelete={handleDeleteFile}
+            onDeleteBatch={handleDeleteBatch}
           />
           {selectedFileId && files.find(f => f.id === selectedFileId)?.analysis_status === '완료' && (
             <FileAnalysisCard
