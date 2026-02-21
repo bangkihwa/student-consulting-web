@@ -302,8 +302,62 @@ async function extractDocxText(buffer: Uint8Array): Promise<string> {
 }
 
 // ============================================================
-// AI: 문서에서 모든 활동 항목을 개별 추출
+// AI: 문서에서 모든 활동 항목을 개별 추출 (압축 형식)
 // ============================================================
+
+// 압축 키 → 실제 DB 필드명 매핑
+const KEY_MAP: Record<string, string> = {
+  s: 'semester',
+  c: 'category_main',
+  ct: 'changche_type',
+  cs: 'changche_sub',
+  gn: 'gyogwa_subject_name',
+  gt: 'gyogwa_type',
+  gs: 'gyogwa_sub',
+  bh: 'bongsa_hours',
+  t: 'title',
+  ac: 'activity_content',
+  cl: 'conclusion',
+  rp: 'research_plan',
+  ra: 'reading_activities',
+  ec: 'evaluation_competency',
+}
+
+// 압축 값 → 실제 값 매핑
+const VALUE_MAP: Record<string, Record<string, string>> = {
+  category_main: { '창': '창체활동', '교': '교과세특' },
+  changche_type: { '자': '자율활동', '동': '동아리활동', '진': '진로활동', '봉': '봉사활동' },
+  gyogwa_type: { '수': '교과활동(수행)', '추': '추가활동' },
+}
+
+function expandEntry(compact: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [shortKey, value] of Object.entries(compact)) {
+    const fullKey = KEY_MAP[shortKey] || shortKey
+    // 값 매핑 확인
+    if (VALUE_MAP[fullKey] && typeof value === 'string' && VALUE_MAP[fullKey][value]) {
+      result[fullKey] = VALUE_MAP[fullKey][value]
+    } else {
+      result[fullKey] = value
+    }
+  }
+  // 누락된 필드 기본값
+  result.semester = result.semester || ''
+  result.category_main = result.category_main || '창체활동'
+  result.changche_type = result.changche_type || null
+  result.changche_sub = result.changche_sub || ''
+  result.gyogwa_subject_name = result.gyogwa_subject_name || ''
+  result.gyogwa_type = result.gyogwa_type || null
+  result.gyogwa_sub = result.gyogwa_sub || ''
+  result.bongsa_hours = result.bongsa_hours ?? null
+  result.title = result.title || ''
+  result.activity_content = result.activity_content || ''
+  result.conclusion = result.conclusion || ''
+  result.research_plan = result.research_plan || ''
+  result.reading_activities = result.reading_activities || ''
+  result.evaluation_competency = result.evaluation_competency || ''
+  return result
+}
 
 async function extractAllEntries(
   apiKey: string,
@@ -312,67 +366,41 @@ async function extractAllEntries(
   studentGrade: string | null,
   enrollmentYear: number | null,
 ): Promise<any[]> {
-  // 텍스트 제한 확장 (60K 문자)
   const inputText = text.substring(0, 60000)
 
-  const systemPrompt = `당신은 한국 고등학생 생활기록부(생기부) 문서를 분석하여 모든 활동 기록을 개별 항목으로 추출하는 전문가입니다.
+  const systemPrompt = `한국 고등학생 생활기록부(생기부) 문서에서 모든 활동 기록을 개별 항목으로 추출하세요.
+학생 현재 ${studentGrade ? `${studentGrade}학년` : '학년 미상'}, 입학연도: ${enrollmentYear || '미상'}
 
 ## 핵심 규칙
-- 문서에 포함된 **모든** 활동/교과 기록을 빠짐없이 각각 별도의 항목으로 추출하세요.
-- 하나의 문서에 창체활동(자율/동아리/진로/봉사)과 교과세특(국어/수학/영어/과학 등)이 섞여 있을 수 있습니다.
-- 한 교과 안에서도 여러 활동(발표, 토론, 수행평가, 탐구 등)이 있으면 각각 별도 항목으로 분리하세요.
-- 학생 현재 학년: ${studentGrade ? `${studentGrade}학년` : '미상'}, 입학연도: ${enrollmentYear || '미상'}
+- 문서의 **모든** 활동/교과 기록을 빠짐없이 각각 별도 항목으로 추출
+- 1학년/2학년/3학년 자료 모두 포함. 학년별 기록을 절대 빠뜨리지 마세요!
+- 창체활동(자율/동아리/진로/봉사)과 교과세특이 섞여 있을 수 있음
+- 한 교과 안에서도 여러 활동(발표, 토론, 수행평가 등)이 있으면 각각 별도 항목으로 분리
 
-## 각 항목에서 추출할 필드
+## 압축 JSON 형식 (토큰 절약을 위해 반드시 짧은 키 사용!)
 
-### 분류 필드
-- **semester**: 학기 ("1-1", "1-2", "2-1", "2-2", "3-1", "3-2"). 문서에 학년/학기 표시가 있으면 그대로, 없으면 맥락으로 추정.
-- **category_main**: "창체활동" 또는 "교과세특"
-- **changche_type**: 창체활동인 경우 "자율활동" | "동아리활동" | "진로활동" | "봉사활동", 교과세특이면 null
-- **changche_sub**: 창체활동의 구체적 활동명 (예: "특강", "신문활용교육", "교육과정박람회", "실험", "프로젝트" 등). 자유롭게 기술. 교과세특이면 빈 문자열.
-- **gyogwa_subject_name**: 교과세특인 경우 교과명 (예: "국어", "수학", "영어", "물리학1", "화학1", "생명과학1", "통합사회", "통합과학", "정보", "기술가정", "한국사" 등). 창체활동이면 빈 문자열.
-- **gyogwa_type**: 교과세특인 경우 "교과활동(수행)" 또는 "추가활동", 창체활동이면 null
-- **gyogwa_sub**: 교과세특의 구체적 활동명 (예: "발표", "토론", "실험", "보고서", "교과활동", "수행", "자율탐구", "주제탐구", "독서논술" 등). 자유롭게 기술. 창체활동이면 빈 문자열.
-- **bongsa_hours**: 봉사활동인 경우 시간 (숫자), 아니면 null
+키 설명:
+- s: 학기 ("1-1","1-2","2-1","2-2","3-1","3-2")
+- c: 대분류 ("창"=창체활동, "교"=교과세특)
+- ct: 창체유형 ("자"=자율, "동"=동아리, "진"=진로, "봉"=봉사). 교과세특이면 생략
+- cs: 창체 활동명 (특강,실험,프로젝트 등). 교과세특이면 생략
+- gn: 교과명 (국어,수학,영어,물리학1,화학1 등). 창체면 생략
+- gt: 교과유형 ("수"=교과활동(수행), "추"=추가활동). 창체면 생략
+- gs: 교과 활동명 (발표,토론,실험,보고서 등). 창체면 생략
+- bh: 봉사시간 (숫자). 봉사 아니면 생략
+- t: 제목/주제 (간결하게)
+- ac: 구체적 내용 (핵심 위주)
+- cl: 후속활동/소감 (없으면 생략)
+- rp: 추가탐구계획 (없으면 생략)
+- ra: 독서활동 (도서명/저자, 없으면 생략)
+- ec: 평가역량 (탐구역량,성실성 등 쉼표구분)
 
-### 내용 필드
-- **title**: 활동 제목/주제 (간결하게, 예: "유클리드 기하학의 대수적 접근 특강")
-- **activity_content**: 주제/구체적인 내용 (상세 내용, 핵심 위주로)
-- **conclusion**: 후속활동, 소감 (문서에 있으면 추출, 없으면 빈 문자열)
-- **research_plan**: 추가탐구계획 (문서에 있으면 추출, 없으면 빈 문자열)
-- **reading_activities**: 독서활동 (도서명/저자 형식, 없으면 빈 문자열)
-- **evaluation_competency**: 평가역량 (쉼표 구분, 예: "탐구역량, 성실성, 비판적사고력")
+## 중요: 빈 값인 필드는 반드시 생략! null도 생략! 이것이 토큰을 절약하는 핵심입니다.
 
-## 참고: 권윤성 생기부 정리 엑셀 예시 (이런 형식으로 추출)
-학기=1학년, 분류=자율, 활동=특강, 평가=탐구역량, 주제=유클리드 기하학의 대수적 접근 특강 참여
-학기=1학년, 분류=동아리, 활동=자유주제탐구, 평가=탐구역량, 주제=뉴럴링크 조사, 후속=뉴럴링크의 양면성 고찰
-학기=1학년, 분류=국어, 활동=토론, 평가=자기주도성/비판적사고, 주제=의과대학 정원 늘려야 한다 찬성, 독서=언어의 높이뛰기/신지영
-학기=2학년, 분류=수학1, 활동=발표, 평가=학업역량/탐구역량/진로역량, 주제=AI 딥러닝에서 사용되는 지수 로그함수 및 삼각함수의 수학적 원리탐구
+## 응답 형식 (정확히 이 형식):
+{"e":[{"s":"1-1","c":"창","ct":"자","cs":"특강","t":"유클리드 기하학","ac":"그뢰브너 기저 소감문 작성","ec":"탐구역량"},{"s":"1-1","c":"교","gn":"국어","gt":"수","gs":"토론","t":"의대 정원 토론","ac":"의과대학 정원 확대 찬성 입장 발표","ra":"언어의 높이뛰기/신지영","ec":"비판적사고"}]}
 
-## 응답 형식
-반드시 아래 JSON 형식으로 응답하세요:
-{
-  "entries": [
-    {
-      "semester": "1-1",
-      "category_main": "창체활동",
-      "changche_type": "자율활동",
-      "changche_sub": "특강",
-      "gyogwa_subject_name": "",
-      "gyogwa_type": null,
-      "gyogwa_sub": "",
-      "bongsa_hours": null,
-      "title": "유클리드 기하학의 대수적 접근 특강",
-      "activity_content": "특강 참여, 그뢰브너 기저 관련 소감문 작성",
-      "conclusion": "",
-      "research_plan": "",
-      "reading_activities": "",
-      "evaluation_competency": "탐구역량"
-    }
-  ]
-}
-
-빠짐없이 모든 항목을 추출하세요. 문서가 길더라도 끝까지 읽고 모든 활동을 추출해야 합니다.`
+모든 학년(1학년,2학년,3학년)의 모든 항목을 빠짐없이 추출하세요.`
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -382,12 +410,12 @@ async function extractAllEntries(
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      temperature: 0.2,
+      temperature: 0.1,
       max_tokens: 16384,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `파일명: ${fileName}\n\n다음 생기부 문서에서 모든 활동 항목을 개별적으로 추출해주세요:\n\n${inputText}` },
+        { role: 'user', content: `파일: ${fileName}\n\n${inputText}` },
       ],
     }),
   })
@@ -401,21 +429,52 @@ async function extractAllEntries(
   const content = data.choices?.[0]?.message?.content
   if (!content) throw new Error('OpenAI 응답이 비어있습니다.')
 
-  const parsed = JSON.parse(content)
+  // finish_reason 확인 - 잘린 경우 로그
+  const finishReason = data.choices?.[0]?.finish_reason
+  console.log(`[AI] finish_reason: ${finishReason}, content length: ${content.length}`)
 
-  // entries 배열 추출
+  let parsed: any
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    // JSON이 잘린 경우: 마지막 완전한 항목까지 복구 시도
+    console.log('[AI] JSON 파싱 실패, 복구 시도...')
+    const recovered = recoverTruncatedJson(content)
+    parsed = JSON.parse(recovered)
+  }
+
+  // 압축 형식 (e 배열)
+  if (Array.isArray(parsed.e)) {
+    return parsed.e.map(expandEntry)
+  }
+  // 이전 형식 호환 (entries 배열)
   if (Array.isArray(parsed.entries)) {
-    return parsed.entries
+    return parsed.entries.map((entry: any) => {
+      // 이미 풀네임 키이면 그대로, 축약 키이면 확장
+      if (entry.semester || entry.category_main) return entry
+      return expandEntry(entry)
+    })
   }
   // 이전 형식 호환 (단건)
   if (parsed.classification && parsed.analysis) {
-    return [{
-      ...parsed.classification,
-      ...parsed.analysis,
-    }]
+    return [{ ...parsed.classification, ...parsed.analysis }]
   }
-  // 단일 항목
-  return [parsed]
+  return [expandEntry(parsed)]
+}
+
+// JSON이 max_tokens로 잘린 경우 마지막 완전한 항목까지 복구
+function recoverTruncatedJson(content: string): string {
+  // {"e":[ ... ,{완전한 항목}, {잘린 항목  까지 올 수 있음
+  // 마지막 완전한 }를 찾아서 그 뒤를 자르고 ]} 추가
+  const lastCompleteObj = content.lastIndexOf('},')
+  if (lastCompleteObj > 0) {
+    return content.substring(0, lastCompleteObj + 1) + ']}'
+  }
+  const lastObj = content.lastIndexOf('}')
+  if (lastObj > 0) {
+    return content.substring(0, lastObj + 1) + ']}'
+  }
+  throw new Error('JSON 복구 실패')
 }
 
 // ============================================================

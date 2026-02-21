@@ -178,6 +178,22 @@ export interface SmActivity {
   updated_at: string
 }
 
+// ============================================================
+// 성적 요약 — sm_grade_summary
+// ============================================================
+
+export interface SmGradeSummary {
+  id: string
+  student_id: string
+  created_by: string
+  grades: Record<string, number | null>  // "1-1_전교과": 2.3 등
+  created_at: string
+  updated_at: string
+}
+
+export const GRADE_SEMESTERS = ['1-1', '1-2', '2-1', '2-2', '3-1'] as const
+export const GRADE_CATEGORIES = ['전교과', '국영수과사', '국영수과', '국영수사'] as const
+
 export interface SmBehaviorSummary {
   id: string
   student_id: string

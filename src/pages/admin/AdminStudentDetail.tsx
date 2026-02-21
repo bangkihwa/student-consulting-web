@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { SmStudent, SmCareerGoals, SmCareerChangeHistory, SmSubjectRecord, SmActivity, SmBehaviorSummary, ADMISSION_TYPES } from '../../types/database'
+import { SmStudent, SmCareerGoals, SmCareerChangeHistory, SmSubjectRecord, SmActivity, SmBehaviorSummary, SmGradeSummary, ADMISSION_TYPES } from '../../types/database'
 import { useFileUpload } from '../../hooks/useFileUpload'
 import { exportStudentExcel } from '../../lib/excelExport'
 import FileUploadSection from '../../components/admin/FileUploadSection'
 import FileList from '../../components/admin/FileList'
 import FileAnalysisCard from '../../components/admin/FileAnalysisCard'
+import GradeInputSection from '../../components/admin/GradeInputSection'
 
 // ============================================================
 // 접기/펼치기 섹션 컴포넌트
@@ -57,6 +58,7 @@ export default function AdminStudentDetail() {
   const [subjectRecords, setSubjectRecords] = useState<SmSubjectRecord[]>([])
   const [activities, setActivities] = useState<SmActivity[]>([])
   const [behaviorSummary, setBehaviorSummary] = useState<SmBehaviorSummary | null>(null)
+  const [gradeSummary, setGradeSummary] = useState<SmGradeSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -121,11 +123,37 @@ export default function AdminStudentDetail() {
         analyses,
         subjectRes.data || [],
         activitiesRes.data || [],
+        gradeSummary?.grades || {},
       )
     } catch (err: any) {
       alert(`엑셀 다운로드 실패: ${err.message}`)
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleSaveGrades = async (grades: Record<string, number | null>) => {
+    if (!studentId) return
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('로그인이 필요합니다.')
+
+    if (gradeSummary) {
+      // 기존 레코드 업데이트
+      const { error: err } = await supabase
+        .from('sm_grade_summary')
+        .update({ grades })
+        .eq('id', gradeSummary.id)
+      if (err) throw new Error(err.message)
+      setGradeSummary({ ...gradeSummary, grades })
+    } else {
+      // 새로 생성
+      const { data, error: err } = await supabase
+        .from('sm_grade_summary')
+        .insert({ student_id: studentId, created_by: user.id, grades })
+        .select()
+        .single()
+      if (err) throw new Error(err.message)
+      setGradeSummary(data)
     }
   }
 
@@ -162,18 +190,20 @@ export default function AdminStudentDetail() {
 
       setStudent(studentRes.data)
 
-      const [goalsRes, historyRes, subjectRes, activitiesRes, behaviorRes] = await Promise.all([
+      const [goalsRes, historyRes, subjectRes, activitiesRes, behaviorRes, gradeRes] = await Promise.all([
         supabase.from('sm_career_goals').select('*').eq('student_id', studentId).maybeSingle(),
         supabase.from('sm_career_change_history').select('*').eq('student_id', studentId).order('change_date', { ascending: false }),
         supabase.from('sm_subject_records').select('*').eq('student_id', studentId).order('semester').order('subject_name'),
         supabase.from('sm_activities').select('*').eq('student_id', studentId).order('start_date', { ascending: false }),
         supabase.from('sm_behavior_summary').select('*').eq('student_id', studentId).maybeSingle(),
+        supabase.from('sm_grade_summary').select('*').eq('student_id', studentId).maybeSingle(),
       ])
       if (goalsRes.data) setCareerGoals(goalsRes.data)
       if (historyRes.data) setCareerHistory(historyRes.data)
       if (subjectRes.data) setSubjectRecords(subjectRes.data)
       if (activitiesRes.data) setActivities(activitiesRes.data)
       if (behaviorRes.data) setBehaviorSummary(behaviorRes.data)
+      if (gradeRes.data) setGradeSummary(gradeRes.data)
       setLoading(false)
     }
     fetchData()
@@ -552,6 +582,16 @@ export default function AdminStudentDetail() {
         ) : (
           <p className="text-slate-400 pt-4">입력된 행동특성 종합의견이 없습니다.</p>
         )}
+      </CollapsibleSection>
+
+      {/* 성적 입력 */}
+      <CollapsibleSection title="성적 등급 평균">
+        <div className="pt-4">
+          <GradeInputSection
+            grades={gradeSummary?.grades || {}}
+            onSave={handleSaveGrades}
+          />
+        </div>
       </CollapsibleSection>
 
       {/* 활동 보고서 업로드 & AI 분석 */}

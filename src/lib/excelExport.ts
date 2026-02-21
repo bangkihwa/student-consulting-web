@@ -206,6 +206,7 @@ export async function exportStudentExcel(
   analyses: SmFileAnalysis[],
   subjectRecords: SmSubjectRecord[] = [],
   activities: SmActivity[] = [],
+  grades: Record<string, number | null> = {},
 ) {
   const allRows: ExcelRow[] = [
     ...fileAnalysisToRows(files, analyses),
@@ -339,16 +340,32 @@ export async function exportStudentExcel(
   ws.mergeCells('A3:B3')
 
   // ============================================================
-  // ROW 4~7: 성적표 빈 행
+  // ROW 4~7: 성적표 행 (성적 데이터 반영)
   // ============================================================
-  const gradeLabels = [
-    ['최종 교과', '전교과'],
-    ['', '국영수과사'],
-    ['', '국영수과'],
-    ['', '국영수사'],
+  // 칼럼 매핑: C=1-1, D=1-2, E=2-1, F=2-2, G=3-1, H=전체
+  const gradeSemesters = ['1-1', '1-2', '2-1', '2-2', '3-1']
+  const gradeRows: [string, string, string][] = [
+    ['최종 교과', '전교과', '전교과'],
+    ['', '국영수과사', '국영수과사'],
+    ['', '국영수과', '국영수과'],
+    ['', '국영수사', '국영수사'],
   ]
-  for (const [labelA, labelB] of gradeLabels) {
-    const row = ws.addRow([labelA, labelB, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''])
+  for (const [labelA, labelB, cat] of gradeRows) {
+    // 학기별 값 + 전체 평균
+    const semValues = gradeSemesters.map(sem => {
+      const v = grades[`${sem}_${cat}`]
+      return v != null ? v : ''
+    })
+    const numValues = semValues.filter(v => typeof v === 'number') as number[]
+    const totalAvg = numValues.length > 0
+      ? (numValues.reduce((a, b) => a + b, 0) / numValues.length).toFixed(2)
+      : ''
+    const row = ws.addRow([
+      labelA, labelB,
+      semValues[0], semValues[1], semValues[2], semValues[3], semValues[4],
+      totalAvg,
+      '', '', '', '', '', '', '', '', '', '',
+    ])
     row.height = 22
     for (let c = 1; c <= 18; c++) {
       const cell = ws.getCell(row.number, c)
