@@ -49,11 +49,24 @@ export default function AdminStudentDetail() {
   const stableGetAnalysis = useCallback(getAnalysis, [getAnalysis])
 
   const handleExportExcel = async () => {
-    if (!student) return
+    if (!student || !studentId) return
     setExporting(true)
     try {
-      const analyses = await getAllAnalyses()
-      exportStudentExcel(student, careerGoals, files, analyses)
+      // 모든 데이터 소스 병렬 조회
+      const [analyses, subjectRes, activitiesRes] = await Promise.all([
+        getAllAnalyses(),
+        supabase.from('sm_subject_records').select('*').eq('student_id', studentId),
+        supabase.from('sm_activities').select('*').eq('student_id', studentId),
+      ])
+
+      exportStudentExcel(
+        student,
+        careerGoals,
+        files,
+        analyses,
+        subjectRes.data || [],
+        activitiesRes.data || [],
+      )
     } catch (err: any) {
       alert(`엑셀 다운로드 실패: ${err.message}`)
     } finally {
@@ -242,7 +255,7 @@ export default function AdminStudentDetail() {
           <h3 className="text-lg font-semibold text-gray-800">활동 보고서 업로드 & AI 분석</h3>
           <button
             onClick={handleExportExcel}
-            disabled={exporting || files.filter(f => f.analysis_status === '완료').length === 0}
+            disabled={exporting}
             className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {exporting ? (

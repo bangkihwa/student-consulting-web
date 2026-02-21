@@ -131,3 +131,63 @@ export const GYOGWA_SUBS: Record<GyogwaType, string[]> = {
 }
 
 export const SEMESTERS = ['1-1', '1-2', '2-1', '2-2', '3-1', '3-2'] as const
+
+// ============================================================
+// 세특관리웹 — sm_subject_records
+// ============================================================
+
+export interface SmSubjectRecord {
+  id: string
+  student_id: string
+  semester: string
+  subject_name: string
+  achievement_level: 'A' | 'B' | 'C' | 'D' | 'E' | null
+  grade_rank: number | null
+  raw_score: number | null
+  subject_average: number | null
+  seukot_attitude: string
+  seukot_inquiry: string
+  seukot_thinking: string
+  seukot_career: string
+  inquiry_keywords: string[]
+  completion_status: '미작성' | '작성중' | '검토요청' | '수정요청' | '완료'
+  admin_feedback: string
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
+// 창체관리웹 / 행특관리웹 — sm_activities, sm_behavior_summary
+// ============================================================
+
+export interface SmActivity {
+  id: string
+  student_id: string
+  activity_type: '자율활동' | '동아리활동' | '진로활동'
+  activity_name: string
+  start_date: string
+  end_date: string
+  motivation: string
+  role_and_process: string
+  results: string
+  reflection: string
+  career_keywords: string[]
+  related_seukot: string
+  admin_feedback: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SmBehaviorSummary {
+  id: string
+  student_id: string
+  core_keywords: string[]
+  character_examples: string
+  academic_growth: string
+  leadership_examples: string
+  career_consistency: string
+  homeroom_draft: string
+  admin_feedback: string
+  created_at: string
+  updated_at: string
+}
