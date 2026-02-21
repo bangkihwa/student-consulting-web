@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
-import { SmStudent, SmCareerGoals, SmCareerChangeHistory, ADMISSION_TYPES } from '../../types/database'
+import { SmStudent, SmCareerGoals, SmCareerChangeHistory, SmSubjectRecord, SmActivity, SmBehaviorSummary, ADMISSION_TYPES } from '../../types/database'
 import { useFileUpload } from '../../hooks/useFileUpload'
 import { exportStudentExcel } from '../../lib/excelExport'
 import FileUploadSection from '../../components/admin/FileUploadSection'
@@ -13,6 +13,9 @@ export default function AdminStudentDetail() {
   const [student, setStudent] = useState<SmStudent | null>(null)
   const [careerGoals, setCareerGoals] = useState<SmCareerGoals | null>(null)
   const [careerHistory, setCareerHistory] = useState<SmCareerChangeHistory[]>([])
+  const [subjectRecords, setSubjectRecords] = useState<SmSubjectRecord[]>([])
+  const [activities, setActivities] = useState<SmActivity[]>([])
+  const [behaviorSummary, setBehaviorSummary] = useState<SmBehaviorSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -107,12 +110,18 @@ export default function AdminStudentDetail() {
 
       setStudent(studentRes.data)
 
-      const [goalsRes, historyRes] = await Promise.all([
+      const [goalsRes, historyRes, subjectRes, activitiesRes, behaviorRes] = await Promise.all([
         supabase.from('sm_career_goals').select('*').eq('student_id', studentId).maybeSingle(),
         supabase.from('sm_career_change_history').select('*').eq('student_id', studentId).order('change_date', { ascending: false }),
+        supabase.from('sm_subject_records').select('*').eq('student_id', studentId).order('semester').order('subject_name'),
+        supabase.from('sm_activities').select('*').eq('student_id', studentId).order('start_date', { ascending: false }),
+        supabase.from('sm_behavior_summary').select('*').eq('student_id', studentId).maybeSingle(),
       ])
       if (goalsRes.data) setCareerGoals(goalsRes.data)
       if (historyRes.data) setCareerHistory(historyRes.data)
+      if (subjectRes.data) setSubjectRecords(subjectRes.data)
+      if (activitiesRes.data) setActivities(activitiesRes.data)
+      if (behaviorRes.data) setBehaviorSummary(behaviorRes.data)
       setLoading(false)
     }
     fetchData()
@@ -246,6 +255,177 @@ export default function AdminStudentDetail() {
           </div>
         ) : (
           <p className="text-gray-400">진로 변경 이력이 없습니다.</p>
+        )}
+      </section>
+
+      {/* 교과 세특 기록 */}
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">교과 세특 기록</h3>
+        {subjectRecords.length > 0 ? (
+          <div className="space-y-4">
+            {(() => {
+              const bySemester = new Map<string, SmSubjectRecord[]>()
+              for (const r of subjectRecords) {
+                const list = bySemester.get(r.semester) || []
+                list.push(r)
+                bySemester.set(r.semester, list)
+              }
+              return Array.from(bySemester.entries()).map(([sem, records]) => (
+                <div key={sem}>
+                  <h4 className="text-sm font-semibold text-blue-700 mb-2 border-b border-blue-100 pb-1">
+                    {sem.replace('-', '학년 ')}학기
+                  </h4>
+                  <div className="space-y-3">
+                    {records.map(r => (
+                      <div key={r.id} className="border border-gray-100 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-medium text-gray-800">{r.subject_name}</span>
+                          {r.achievement_level && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700">
+                              성취도 {r.achievement_level}
+                            </span>
+                          )}
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${
+                            r.completion_status === '완료' ? 'bg-green-50 text-green-700' :
+                            r.completion_status === '검토요청' ? 'bg-amber-50 text-amber-700' :
+                            r.completion_status === '수정요청' ? 'bg-red-50 text-red-700' :
+                            'bg-gray-50 text-gray-500'
+                          }`}>
+                            {r.completion_status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          {r.seukot_attitude && (
+                            <div><span className="text-gray-500">[학습태도]</span> <span className="text-gray-800">{r.seukot_attitude}</span></div>
+                          )}
+                          {r.seukot_inquiry && (
+                            <div><span className="text-gray-500">[탐구]</span> <span className="text-gray-800">{r.seukot_inquiry}</span></div>
+                          )}
+                          {r.seukot_thinking && (
+                            <div><span className="text-gray-500">[사고력]</span> <span className="text-gray-800">{r.seukot_thinking}</span></div>
+                          )}
+                          {r.seukot_career && (
+                            <div><span className="text-gray-500">[진로연계]</span> <span className="text-gray-800">{r.seukot_career}</span></div>
+                          )}
+                        </div>
+                        {Array.isArray(r.inquiry_keywords) && r.inquiry_keywords.length > 0 && (
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {r.inquiry_keywords.map((kw, i) => (
+                              <span key={i} className="px-2 py-0.5 text-xs bg-indigo-50 text-indigo-600 rounded-full">{kw}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            })()}
+          </div>
+        ) : (
+          <p className="text-gray-400">입력된 교과 세특 기록이 없습니다.</p>
+        )}
+      </section>
+
+      {/* 창체활동 기록 */}
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">창체활동 기록</h3>
+        {activities.length > 0 ? (
+          <div className="space-y-3">
+            {activities.map(a => (
+              <div key={a.id} className="border border-gray-100 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                    a.activity_type === '자율활동' ? 'bg-green-50 text-green-700' :
+                    a.activity_type === '동아리활동' ? 'bg-purple-50 text-purple-700' :
+                    'bg-orange-50 text-orange-700'
+                  }`}>
+                    {a.activity_type.replace('활동', '')}
+                  </span>
+                  <span className="font-medium text-gray-800">{a.activity_name}</span>
+                  {a.start_date && (
+                    <span className="text-xs text-gray-400">
+                      {a.start_date}{a.end_date && a.end_date !== a.start_date ? ` ~ ${a.end_date}` : ''}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1 text-sm">
+                  {a.motivation && (
+                    <div><span className="text-gray-500 font-medium">동기:</span> <span className="text-gray-800">{a.motivation}</span></div>
+                  )}
+                  {a.role_and_process && (
+                    <div><span className="text-gray-500 font-medium">역할/과정:</span> <span className="text-gray-800">{a.role_and_process}</span></div>
+                  )}
+                  {a.results && (
+                    <div><span className="text-gray-500 font-medium">결과:</span> <span className="text-gray-800">{a.results}</span></div>
+                  )}
+                  {a.reflection && (
+                    <div><span className="text-gray-500 font-medium">성찰:</span> <span className="text-gray-800">{a.reflection}</span></div>
+                  )}
+                </div>
+                {Array.isArray(a.career_keywords) && a.career_keywords.length > 0 && (
+                  <div className="flex gap-1 mt-2 flex-wrap">
+                    {a.career_keywords.map((kw, i) => (
+                      <span key={i} className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded-full">{kw}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-400">입력된 창체활동 기록이 없습니다.</p>
+        )}
+      </section>
+
+      {/* 행동특성 종합의견 */}
+      <section className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">행동특성 종합의견</h3>
+        {behaviorSummary ? (
+          <div className="space-y-4">
+            {Array.isArray(behaviorSummary.core_keywords) && behaviorSummary.core_keywords.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">핵심 키워드</p>
+                <div className="flex gap-2 flex-wrap">
+                  {behaviorSummary.core_keywords.map((kw, i) => (
+                    <span key={i} className="px-3 py-1 bg-teal-50 text-teal-700 rounded-full text-sm">{kw}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {behaviorSummary.character_examples && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">인성 사례</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{behaviorSummary.character_examples}</p>
+              </div>
+            )}
+            {behaviorSummary.academic_growth && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">학업 성장</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{behaviorSummary.academic_growth}</p>
+              </div>
+            )}
+            {behaviorSummary.leadership_examples && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">리더십 사례</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{behaviorSummary.leadership_examples}</p>
+              </div>
+            )}
+            {behaviorSummary.career_consistency && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">진로 일관성</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{behaviorSummary.career_consistency}</p>
+              </div>
+            )}
+            {behaviorSummary.homeroom_draft && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">담임 소견 초안</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{behaviorSummary.homeroom_draft}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-gray-400">입력된 행동특성 종합의견이 없습니다.</p>
         )}
       </section>
 
