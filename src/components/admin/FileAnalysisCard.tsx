@@ -5,6 +5,7 @@ interface Props {
   fileId: string
   getAnalysis: (fileId: string) => Promise<SmFileAnalysis | null>
   onUpdate: (analysisId: string, updates: Partial<SmFileAnalysis>) => Promise<void>
+  onReanalyze?: (fileId: string) => Promise<void>
 }
 
 const FIELDS: { key: keyof SmFileAnalysis; label: string; multiline: boolean }[] = [
@@ -16,12 +17,13 @@ const FIELDS: { key: keyof SmFileAnalysis; label: string; multiline: boolean }[]
   { key: 'evaluation_competency', label: '평가역량 (AI 분석)', multiline: false },
 ]
 
-export default function FileAnalysisCard({ fileId, getAnalysis, onUpdate }: Props) {
+export default function FileAnalysisCard({ fileId, getAnalysis, onUpdate, onReanalyze }: Props) {
   const [analysis, setAnalysis] = useState<SmFileAnalysis | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [reanalyzing, setReanalyzing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -82,9 +84,27 @@ export default function FileAnalysisCard({ fileId, getAnalysis, onUpdate }: Prop
     <div className="bg-white rounded-xl shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-800">AI 분석 결과</h3>
-        {analysis.is_edited && (
-          <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">수정됨</span>
-        )}
+        <div className="flex items-center gap-2">
+          {analysis.is_edited && (
+            <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">수정됨</span>
+          )}
+          {onReanalyze && (
+            <button
+              onClick={async () => {
+                setReanalyzing(true)
+                try {
+                  await onReanalyze(fileId)
+                } finally {
+                  setReanalyzing(false)
+                }
+              }}
+              disabled={reanalyzing}
+              className="px-3 py-1 text-xs text-orange-600 border border-orange-300 rounded-md hover:bg-orange-50 disabled:opacity-50"
+            >
+              {reanalyzing ? '재분석 중...' : '재분석'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-4">

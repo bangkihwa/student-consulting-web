@@ -103,6 +103,49 @@ export function useFileUpload(studentId: string | undefined) {
     if (err) throw new Error(err.message)
   }
 
+  const getAllAnalyses = useCallback(async (): Promise<SmFileAnalysis[]> => {
+    if (!studentId) return []
+    const { data, error: err } = await supabase
+      .from('sm_file_analysis')
+      .select('*')
+      .eq('student_id', studentId)
+
+    if (err) throw new Error(err.message)
+    return data || []
+  }, [studentId])
+
+  const reanalyzeFile = async (fileId: string) => {
+    if (!studentId) throw new Error('학생 ID가 필요합니다.')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('로그인이 필요합니다.')
+
+    // 상태를 분석중으로 변경
+    await supabase
+      .from('sm_uploaded_files')
+      .update({ analysis_status: '분석중', analysis_error: null })
+      .eq('id', fileId)
+
+    await fetchFiles()
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const response = await fetch(`${supabaseUrl}/functions/v1/analyze-file`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ file_id: fileId, reanalyze: true }),
+    })
+
+    const result = await response.json()
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || '재분석 실패')
+    }
+
+    await fetchFiles()
+    return result
+  }
+
   return {
     files,
     loading,
@@ -110,7 +153,9 @@ export function useFileUpload(studentId: string | undefined) {
     uploadFile,
     deleteFile,
     getAnalysis,
+    getAllAnalyses,
     updateAnalysis,
+    reanalyzeFile,
     refreshFiles: fetchFiles,
   }
 }

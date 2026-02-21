@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { SmStudent, SmCareerGoals, SmCareerChangeHistory, ADMISSION_TYPES } from '../../types/database'
 import { useFileUpload } from '../../hooks/useFileUpload'
+import { exportStudentExcel } from '../../lib/excelExport'
 import FileUploadSection from '../../components/admin/FileUploadSection'
 import FileList from '../../components/admin/FileList'
 import FileAnalysisCard from '../../components/admin/FileAnalysisCard'
@@ -16,10 +17,11 @@ export default function AdminStudentDetail() {
   const [error, setError] = useState<string | null>(null)
 
   // 파일 업로드 관련
-  const { files, uploadFile, deleteFile, getAnalysis, updateAnalysis } = useFileUpload(studentId)
+  const { files, uploadFile, deleteFile, getAnalysis, getAllAnalyses, updateAnalysis, reanalyzeFile } = useFileUpload(studentId)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const handleUpload = async (file: File, metadata: Parameters<typeof uploadFile>[1]) => {
     setUploading(true)
@@ -45,6 +47,27 @@ export default function AdminStudentDetail() {
   }
 
   const stableGetAnalysis = useCallback(getAnalysis, [getAnalysis])
+
+  const handleExportExcel = async () => {
+    if (!student) return
+    setExporting(true)
+    try {
+      const analyses = await getAllAnalyses()
+      exportStudentExcel(student, careerGoals, files, analyses)
+    } catch (err: any) {
+      alert(`엑셀 다운로드 실패: ${err.message}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleReanalyze = async (fileId: string) => {
+    try {
+      await reanalyzeFile(fileId)
+    } catch (err: any) {
+      alert(`재분석 실패: ${err.message}`)
+    }
+  }
 
   useEffect(() => {
     if (!studentId) return
@@ -215,6 +238,28 @@ export default function AdminStudentDetail() {
 
       {/* 활동 보고서 업로드 & AI 분석 */}
       <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-800">활동 보고서 업로드 & AI 분석</h3>
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting || files.filter(f => f.analysis_status === '완료').length === 0}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {exporting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                다운로드 중...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                엑셀 다운로드
+              </>
+            )}
+          </button>
+        </div>
         <FileUploadSection onUpload={handleUpload} uploading={uploading} />
         {uploadError && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
@@ -232,7 +277,21 @@ export default function AdminStudentDetail() {
             fileId={selectedFileId}
             getAnalysis={stableGetAnalysis}
             onUpdate={updateAnalysis}
+            onReanalyze={handleReanalyze}
           />
+        )}
+        {selectedFileId && files.find(f => f.id === selectedFileId)?.analysis_status === '실패' && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+            <p className="text-sm text-red-600 mb-3">
+              분석 실패: {files.find(f => f.id === selectedFileId)?.analysis_error || '알 수 없는 오류'}
+            </p>
+            <button
+              onClick={() => handleReanalyze(selectedFileId)}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+            >
+              재분석
+            </button>
+          </div>
         )}
       </section>
     </div>
