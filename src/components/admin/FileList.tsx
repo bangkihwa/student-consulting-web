@@ -29,13 +29,24 @@ export default function FileList({ files, selectedFileId, onSelect, onDelete }: 
     return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
   }
 
+  const getSemesterLabel = (semester: string) => {
+    if (!semester) return ''
+    return semester.replace('-', '학년 ') + '학기'
+  }
+
   const getCategoryLabel = (file: SmUploadedFile) => {
     if (file.category_main === '창체활동') {
-      const parts = [file.changche_type, file.changche_sub].filter(Boolean)
-      return parts.length > 0 ? `창체 > ${parts.join(' > ')}` : '창체활동'
+      const type = file.changche_type?.replace('활동', '') || ''
+      return type || '창체'
     }
-    const parts = [file.gyogwa_subject_name, file.gyogwa_type, file.gyogwa_sub].filter(Boolean)
-    return parts.length > 0 ? `교과 > ${parts.join(' > ')}` : '교과세특'
+    return file.gyogwa_subject_name || '교과'
+  }
+
+  const getActivityLabel = (file: SmUploadedFile) => {
+    if (file.category_main === '창체활동') {
+      return file.changche_sub || ''
+    }
+    return file.gyogwa_sub || ''
   }
 
   return (
@@ -50,6 +61,7 @@ export default function FileList({ files, selectedFileId, onSelect, onDelete }: 
         {files.map(file => {
           const status = STATUS_STYLES[file.analysis_status] || STATUS_STYLES['대기중']
           const isSelected = file.id === selectedFileId
+          const isComplete = file.analysis_status === '완료'
 
           return (
             <div
@@ -63,22 +75,39 @@ export default function FileList({ files, selectedFileId, onSelect, onDelete }: 
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-xs font-medium text-gray-500 uppercase">
                       {file.file_type}
                     </span>
                     <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${status.bg} ${status.text}`}>
                       {status.label}
                     </span>
-                    {file.semester && (
-                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-purple-50 text-purple-600">
-                        {file.semester}
+                    {isComplete && file.semester && (
+                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-purple-50 text-purple-700 font-medium">
+                        {getSemesterLabel(file.semester)}
+                      </span>
+                    )}
+                    {isComplete && (
+                      <span className={`px-1.5 py-0.5 text-xs rounded-full font-medium ${
+                        file.category_main === '창체활동'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-blue-50 text-blue-700'
+                      }`}>
+                        {getCategoryLabel(file)}
+                      </span>
+                    )}
+                    {isComplete && getActivityLabel(file) && (
+                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+                        {getActivityLabel(file)}
                       </span>
                     )}
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate">{file.file_name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {getCategoryLabel(file)} &middot; {formatDate(file.created_at)}
+                    {formatDate(file.created_at)}
+                    {isComplete && (
+                      <span className="ml-2 text-blue-500">AI 자동분류</span>
+                    )}
                   </p>
                   {file.analysis_status === '실패' && file.analysis_error && (
                     <p className="text-xs text-red-500 mt-1">{file.analysis_error}</p>

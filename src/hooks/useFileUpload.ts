@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { SmUploadedFile, SmFileAnalysis } from '../types/database'
-import { CategoryMetadata } from '../components/admin/CategorySelector'
 
 export function useFileUpload(studentId: string | undefined) {
   const [files, setFiles] = useState<SmUploadedFile[]>([])
@@ -30,7 +29,7 @@ export function useFileUpload(studentId: string | undefined) {
     fetchFiles()
   }, [fetchFiles])
 
-  const uploadFile = async (file: File, metadata: CategoryMetadata) => {
+  const uploadFile = async (file: File) => {
     if (!studentId) throw new Error('학생 ID가 필요합니다.')
 
     const { data: { session } } = await supabase.auth.getSession()
@@ -39,14 +38,6 @@ export function useFileUpload(studentId: string | undefined) {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('student_id', studentId)
-    formData.append('semester', metadata.semester)
-    formData.append('category_main', metadata.category_main)
-    if (metadata.changche_type) formData.append('changche_type', metadata.changche_type)
-    formData.append('changche_sub', metadata.changche_sub)
-    if (metadata.gyogwa_type) formData.append('gyogwa_type', metadata.gyogwa_type)
-    formData.append('gyogwa_sub', metadata.gyogwa_sub)
-    formData.append('gyogwa_subject_name', metadata.gyogwa_subject_name)
-    if (metadata.bongsa_hours != null) formData.append('bongsa_hours', String(metadata.bongsa_hours))
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
     const response = await fetch(`${supabaseUrl}/functions/v1/analyze-file`, {
@@ -114,6 +105,16 @@ export function useFileUpload(studentId: string | undefined) {
     return data || []
   }, [studentId])
 
+  const updateFileMetadata = async (fileId: string, updates: Partial<SmUploadedFile>) => {
+    const { error: err } = await supabase
+      .from('sm_uploaded_files')
+      .update(updates)
+      .eq('id', fileId)
+
+    if (err) throw new Error(err.message)
+    await fetchFiles()
+  }
+
   const reanalyzeFile = async (fileId: string) => {
     if (!studentId) throw new Error('학생 ID가 필요합니다.')
     const { data: { session } } = await supabase.auth.getSession()
@@ -155,6 +156,7 @@ export function useFileUpload(studentId: string | undefined) {
     getAnalysis,
     getAllAnalyses,
     updateAnalysis,
+    updateFileMetadata,
     reanalyzeFile,
     refreshFiles: fetchFiles,
   }

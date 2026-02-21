@@ -1,54 +1,55 @@
 import { useState, useRef } from 'react'
-import CategorySelector, { CategoryMetadata } from './CategorySelector'
 
 interface Props {
-  onUpload: (file: File, metadata: CategoryMetadata) => Promise<void>
+  onUpload: (file: File) => Promise<void>
   uploading: boolean
 }
 
-const DEFAULT_METADATA: CategoryMetadata = {
-  semester: '',
-  category_main: '창체활동',
-  changche_type: null,
-  changche_sub: '',
-  gyogwa_type: null,
-  gyogwa_sub: '',
-  gyogwa_subject_name: '',
-  bongsa_hours: null,
-}
-
 export default function FileUploadSection({ onUpload, uploading }: Props) {
-  const [metadata, setMetadata] = useState<CategoryMetadata>(DEFAULT_METADATA)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileSelect = (file: File) => {
+  const validateFile = (file: File): boolean => {
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (!ext || !['pdf', 'docx'].includes(ext)) {
-      alert('PDF 또는 DOCX 파일만 업로드 가능합니다.\n한글(HWP) 파일은 PDF로 변환 후 업로드해주세요.')
-      return
+      alert(`${file.name}: PDF 또는 DOCX 파일만 업로드 가능합니다.\n한글(HWP) 파일은 PDF로 변환 후 업로드해주세요.`)
+      return false
     }
     if (file.size > 10 * 1024 * 1024) {
-      alert('파일 크기는 10MB 이하여야 합니다.')
-      return
+      alert(`${file.name}: 파일 크기는 10MB 이하여야 합니다.`)
+      return false
     }
-    setSelectedFile(file)
+    return true
+  }
+
+  const addFiles = (newFiles: FileList | File[]) => {
+    const valid = Array.from(newFiles).filter(validateFile)
+    if (valid.length === 0) return
+    setSelectedFiles(prev => {
+      const existing = new Set(prev.map(f => `${f.name}_${f.size}`))
+      const unique = valid.filter(f => !existing.has(`${f.name}_${f.size}`))
+      return [...prev, ...unique]
+    })
+  }
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFileSelect(file)
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files)
   }
 
   const handleSubmit = async () => {
-    if (!selectedFile) return
+    if (selectedFiles.length === 0) return
     try {
-      await onUpload(selectedFile, metadata)
-      setSelectedFile(null)
-      setMetadata(DEFAULT_METADATA)
+      for (const file of selectedFiles) {
+        await onUpload(file)
+      }
+      setSelectedFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch {
       // 에러는 상위에서 처리
@@ -63,15 +64,14 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">활동 보고서 업로드</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-2">활동 보고서 업로드</h3>
+      <p className="text-sm text-gray-500 mb-4">
+        창체활동, 교과세특 구분 없이 파일만 올리면 AI가 자동으로 학기, 분류, 교과명을 판별합니다.
+      </p>
 
       <div className="space-y-4">
-        {/* 카테고리 선택 */}
-        <CategorySelector value={metadata} onChange={setMetadata} />
-
         {/* 파일 선택 영역 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">파일 선택</label>
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
@@ -80,20 +80,19 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
             className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition ${
               dragOver
                 ? 'border-blue-500 bg-blue-50'
-                : selectedFile
+                : selectedFiles.length > 0
                   ? 'border-green-300 bg-green-50'
                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
             }`}
           >
-            {selectedFile ? (
+            {selectedFiles.length > 0 ? (
               <div>
-                <p className="text-sm font-medium text-green-700">{selectedFile.name}</p>
-                <p className="text-xs text-green-600 mt-1">{formatFileSize(selectedFile.size)}</p>
-                <p className="text-xs text-gray-500 mt-2">클릭하여 다른 파일 선택</p>
+                <p className="text-sm font-medium text-green-700">{selectedFiles.length}개 파일 선택됨</p>
+                <p className="text-xs text-gray-500 mt-2">클릭하여 파일 추가</p>
               </div>
             ) : (
               <div>
-                <p className="text-sm text-gray-500">파일을 드래그하거나 클릭하여 선택</p>
+                <p className="text-sm text-gray-500">파일을 드래그하거나 클릭하여 선택 (복수 선택 가능)</p>
                 <p className="text-xs text-gray-400 mt-1">PDF, DOCX (최대 10MB)</p>
                 <p className="text-xs text-gray-400">HWP 파일은 PDF로 변환 후 업로드해주세요</p>
               </div>
@@ -103,21 +102,48 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
             ref={fileInputRef}
             type="file"
             accept=".pdf,.docx"
+            multiple
             className="hidden"
             onChange={e => {
-              const file = e.target.files?.[0]
-              if (file) handleFileSelect(file)
+              if (e.target.files && e.target.files.length > 0) addFiles(e.target.files)
+              e.target.value = ''
             }}
           />
         </div>
 
+        {/* 선택된 파일 목록 */}
+        {selectedFiles.length > 0 && (
+          <div className="space-y-2">
+            {selectedFiles.map((file, idx) => (
+              <div key={`${file.name}_${idx}`} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 uppercase flex-shrink-0">
+                    {file.name.split('.').pop()}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{formatFileSize(file.size)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); removeFile(idx) }}
+                  className="text-gray-400 hover:text-red-500 transition ml-2 flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 업로드 버튼 */}
         <button
           type="button"
-          disabled={!selectedFile || uploading}
+          disabled={selectedFiles.length === 0 || uploading}
           onClick={handleSubmit}
           className={`w-full py-3 rounded-lg text-sm font-medium transition ${
-            !selectedFile || uploading
+            selectedFiles.length === 0 || uploading
               ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
               : 'bg-blue-600 text-white hover:bg-blue-700'
           }`}
@@ -128,7 +154,7 @@ export default function FileUploadSection({ onUpload, uploading }: Props) {
               AI 분석 중...
             </span>
           ) : (
-            '업로드 및 AI 분석'
+            `업로드 및 AI 자동 분류 (${selectedFiles.length}개)`
           )}
         </button>
       </div>

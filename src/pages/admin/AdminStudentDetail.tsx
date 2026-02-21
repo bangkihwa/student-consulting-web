@@ -61,17 +61,17 @@ export default function AdminStudentDetail() {
   const [error, setError] = useState<string | null>(null)
 
   // 파일 업로드 관련
-  const { files, uploadFile, deleteFile, getAnalysis, getAllAnalyses, updateAnalysis, reanalyzeFile } = useFileUpload(studentId)
+  const { files, uploadFile, deleteFile, getAnalysis, getAllAnalyses, updateAnalysis, updateFileMetadata, reanalyzeFile } = useFileUpload(studentId)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
 
-  const handleUpload = async (file: File, metadata: Parameters<typeof uploadFile>[1]) => {
+  const handleUpload = async (file: File) => {
     setUploading(true)
     setUploadError(null)
     try {
-      const result = await uploadFile(file, metadata)
+      const result = await uploadFile(file)
       setSelectedFileId(result.file.id)
     } catch (err: any) {
       setUploadError(err.message || '업로드 실패')
@@ -563,8 +563,10 @@ export default function AdminStudentDetail() {
           {selectedFileId && files.find(f => f.id === selectedFileId)?.analysis_status === '완료' && (
             <FileAnalysisCard
               fileId={selectedFileId}
+              file={files.find(f => f.id === selectedFileId)!}
               getAnalysis={stableGetAnalysis}
               onUpdate={updateAnalysis}
+              onUpdateFile={updateFileMetadata}
               onReanalyze={handleReanalyze}
             />
           )}
